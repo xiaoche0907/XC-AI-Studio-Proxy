@@ -814,22 +814,28 @@ class LoginService:
                 nonlocal detected_email
                 url = frame.url
                 logger.debug("导航到: %s", url)
-                # 检测登录完成：跳转到非登录页面
-                if "accounts.google.com" not in url and "google.com" in url:
-                    # 尝试提取邮箱
-                    try:
-                        detected_email = await page.evaluate("""
-                            () => {
-                                // 尝试从页面获取邮箱
-                                const el = document.querySelector('[data-email]')
-                                    || document.querySelector('.gb_nb')
-                                    || document.querySelector('[aria-label*="@"]');
-                                return el ? (el.getAttribute('data-email') || el.textContent.trim()) : null;
-                            }
-                        """)
-                    except Exception:
-                        pass
-                    login_done.set()
+                # 检测登录完成：仅当主窗口真正进入 AI Studio 页面时才判定登录成功。
+                # 不能只看 "google.com 域且非 accounts.google.com"，否则登录页的
+                # iframe（如 ogs.google.com 顶部栏）导航会误判登录完成，导致保存
+                # 的 cookies 缺少 SID/HSID 等核心认证字段。
+                if frame is not page.main_frame:
+                    return
+                if "aistudio.google.com" not in url:
+                    return
+                # 尝试提取邮箱
+                try:
+                    detected_email = await page.evaluate("""
+                        () => {
+                            // 尝试从页面获取邮箱
+                            const el = document.querySelector('[data-email]')
+                                || document.querySelector('.gb_nb')
+                                || document.querySelector('[aria-label*="@"]');
+                            return el ? (el.getAttribute('data-email') || el.textContent.trim()) : null;
+                        }
+                    """)
+                except Exception:
+                    pass
+                login_done.set()
 
             def on_page_close():
                 abort_login("登录窗口已关闭")

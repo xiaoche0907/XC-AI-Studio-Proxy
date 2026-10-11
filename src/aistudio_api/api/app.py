@@ -15,6 +15,7 @@ from aistudio_api.infrastructure.gateway.client import AIStudioClient
 from .routes_anthropic import router as anthropic_router
 from .dependencies import require_api_key
 from .routes_accounts import router as accounts_router
+from .routes_api_keys import router as api_keys_router
 from .routes_gemini import router as gemini_router
 from .routes_openai import router as openai_router
 from .routes_system import protected_router as system_protected_router
@@ -77,12 +78,37 @@ async def lifespan(app: FastAPI):
             await client.warmup()
         except Exception as e:
             logger.warning("浏览器预热失败: %s", e)
+            try:
+                client._session._cleanup_stale_chromium_sync(None)
+            except Exception:
+                pass
     warmup_task = asyncio.create_task(_warmup())
+
+    # 后台定期探测账号 cookies 有效性（每 60 秒），供轮询过滤与前端告警
+    probe_task = None
+    async def _auth_probe_loop():
+        from aistudio_api.infrastructure.account.auth_probe import refresh_all
+
+        while True:
+            try:
+                svc = runtime_state.account_service
+                if svc is not None:
+                    accounts = [
+                        (a.id, str(svc.auth_path(a.id)) if svc.auth_path(a.id) else None)
+                        for a in svc.list_accounts()
+                    ]
+                    await asyncio.to_thread(refresh_all, accounts)
+            except Exception as e:
+                logger.debug("auth probe loop error: %s", e)
+            await asyncio.sleep(60)
+    probe_task = asyncio.create_task(_auth_probe_loop())
 
     yield
     logger.info("Shutting down")
     if warmup_task and not warmup_task.done():
         warmup_task.cancel()
+    if probe_task and not probe_task.done():
+        probe_task.cancel()
     runtime_state.client = None
     runtime_state.busy_lock = None
     runtime_state.account_service = None
@@ -96,12 +122,27 @@ app.include_router(gemini_router, dependencies=[Depends(require_api_key)])
 app.include_router(openai_router, dependencies=[Depends(require_api_key)])
 app.include_router(anthropic_router, dependencies=[Depends(require_api_key)])
 app.include_router(accounts_router, dependencies=[Depends(require_api_key)])
+app.include_router(api_keys_router, dependencies=[Depends(require_api_key)])
 
 # 挂载静态文件
 import os
+
+from fastapi.staticfiles import StaticFiles
+from starlette.responses import Response
+
+
+class NoCacheStaticFiles(StaticFiles):
+    """静态文件禁用缓存，避免前端改动后浏览器仍加载旧版本。"""
+
+    async def get_response(self, path: str, scope) -> Response:
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+
 static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
 if os.path.isdir(static_dir):
-    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+    app.mount("/static", NoCacheStaticFiles(directory=static_dir), name="static")
 
 
 @app.get("/")

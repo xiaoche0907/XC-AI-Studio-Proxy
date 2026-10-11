@@ -6,6 +6,7 @@ from fastapi import HTTPException, Request
 
 from aistudio_api.config import settings
 
+from aistudio_api.infrastructure.account.api_key_store import api_key_store
 from aistudio_api.infrastructure.gateway.client import AIStudioClient
 
 from .state import runtime_state
@@ -29,11 +30,11 @@ def _extract_request_token(request: Request) -> str | None:
 
 
 def require_api_key(request: Request) -> None:
-    if not settings.auth_enabled:
+    if not api_key_store.enabled():
         return
 
     token = _extract_request_token(request)
-    if token in settings.api_keys:
+    if token and api_key_store.has(token):
         return
 
     raise HTTPException(

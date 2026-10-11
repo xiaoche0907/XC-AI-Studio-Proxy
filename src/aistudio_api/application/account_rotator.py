@@ -120,14 +120,33 @@ class AccountRotator:
         return result
 
     def _get_available_accounts(self) -> list[tuple[AccountMeta, AccountStats]]:
-        """获取所有可用的账号（不在冷却期）。"""
+        """获取所有可用的账号（不在冷却期，且 cookies 未失效）。"""
+        from aistudio_api.infrastructure.account.auth_probe import is_valid
+
         accounts = self._store.list_accounts()
         available = []
         for account in accounts:
             stats = self._stats.get(account.id, AccountStats(account_id=account.id))
-            if stats.is_available():
-                available.append((account, stats))
+            if not stats.is_available():
+                continue
+            auth_path = self._store.auth_path(account.id)
+            valid = is_valid(account.id, str(auth_path) if auth_path else None)
+            if valid is False:
+                # cookies 已失效的账号不参与轮询，避免无效请求
+                continue
+            available.append((account, stats))
         return available
+
+    def _has_valid_auth_account(self) -> bool:
+        """是否存在 cookies 未被判定为失效的账号。"""
+        from aistudio_api.infrastructure.account.auth_probe import is_valid
+
+        for account in self._store.list_accounts():
+            auth_path = self._store.auth_path(account.id)
+            valid = is_valid(account.id, str(auth_path) if auth_path else None)
+            if valid is not False:
+                return True
+        return False
 
     def _pick_round_robin(self, available: list[tuple[AccountMeta, AccountStats]]) -> tuple[AccountMeta, AccountStats] | None:
         """Round-robin 选择，基于全量账号索引，避免 available 变化导致跳过或重复。"""
@@ -163,6 +182,10 @@ class AccountRotator:
             available = self._get_available_accounts()
 
             if not available:
+                # 没有任何有效 cookies 的账号时直接返回 None，让调用方报错
+                if not self._has_valid_auth_account():
+                    logger.warning("没有 cookies 有效的账号，拒绝轮询")
+                    return None
                 # 所有账号都在冷却期，找一个冷却时间最短的
                 all_accounts = self._store.list_accounts()
                 if not all_accounts:

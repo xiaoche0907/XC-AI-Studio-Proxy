@@ -1,7 +1,23 @@
 
 function app() {
   return {
-    view: 'chat', sidebarOpen: false, configOpen: false, openSelect: null,
+    view: 'chat', sidebarOpen: false, configOpen: false, openSelect: null, imgRatio: '1:1', imgRes: '1K',
+    imgSizes: {
+      '1:1': { '1K': '1024x1024', '2K': '2048x2048', '4K': '4096x4096' },
+      '1:4': { '1K': '512x2048', '2K': '1024x4096', '4K': '2048x8192' },
+      '1:8': { '1K': '384x3072', '2K': '768x6144', '4K': '1536x12288' },
+      '2:3': { '1K': '848x1264', '2K': '1696x2528', '4K': '3392x5056' },
+      '3:2': { '1K': '1264x848', '2K': '2528x1696', '4K': '5056x3392' },
+      '3:4': { '1K': '896x1200', '2K': '1792x2400', '4K': '3584x4800' },
+      '4:1': { '1K': '2048x512', '2K': '4096x1024', '4K': '8192x2048' },
+      '4:3': { '1K': '1200x896', '2K': '2400x1792', '4K': '4800x3584' },
+      '4:5': { '1K': '928x1152', '2K': '1856x2304', '4K': '3712x4608' },
+      '5:4': { '1K': '1152x928', '2K': '2304x1856', '4K': '4608x3712' },
+      '8:1': { '1K': '3072x384', '2K': '6144x768', '4K': '12288x1536' },
+      '9:16': { '1K': '768x1376', '2K': '1536x2752', '4K': '3072x5504' },
+      '16:9': { '1K': '1376x768', '2K': '2752x1536', '4K': '5504x3072' },
+      '21:9': { '1K': '1584x672', '2K': '3168x1344', '4K': '6336x2688' },
+    },
     stats: {}, rotationMode: 'round_robin', rotCfg: { mode: 'round_robin', cooldown: 60 },
     accounts: [], rotationAccounts: {}, activeId: '', activeAccount: {},
     models: [], model: '',
@@ -12,6 +28,7 @@ function app() {
     toast: { show: false, msg: '', t: null },
     cookieModal: { open: false, cookies: '', name: '', email: '', importing: false },
     loginInProgress: false,
+    apiKeys: [], newKey: null,
 
     async init() {
       await this.checkAuth();
@@ -91,7 +108,7 @@ function app() {
       localStorage.removeItem('asp_models');
       location.reload();
     },
-    go(v) { this.view = v; this.sidebarOpen = false; if (v === 'dashboard') this.loadStats(); if (v === 'accounts') { this.loadAccounts(); this.loadRotation() } },
+    go(v) { this.view = v; this.sidebarOpen = false; if (v === 'dashboard') this.loadStats(); if (v === 'accounts') { this.loadAccounts(); this.loadRotation() } if (v === 'apikeys') this.loadApiKeys(); },
     newChat() { this.msgs = []; this.saveToCache(); this.showToast('已创建新对话') },
     showToast(m) { this.toast.msg = m; this.toast.show = true; if (this.toast.t) clearTimeout(this.toast.t); this.toast.t = setTimeout(() => this.toast.show = false, 3000) },
     toggleSelect(k, e) { e.stopPropagation(); this.openSelect = this.openSelect === k ? null : k },
@@ -161,14 +178,42 @@ function app() {
     async loadStats() { try { const r = await this.apiFetch('/stats'); const d = await r.json(); this.stats = d.models || {} } catch (e) { } },
     async loadAccounts() { try { const [a, b] = await Promise.all([this.apiFetch('/accounts').then(r => r.json()), this.apiFetch('/accounts/active').then(r => r.json())]); this.accounts = a || []; this.activeId = b?.id || ''; this.activeAccount = b || {} } catch (e) { } },
     async loadRotation() { try { const r = await this.apiFetch('/rotation'); const d = await r.json(); this.rotationMode = d.mode || 'round_robin'; this.rotCfg.mode = d.mode || 'round_robin'; this.rotCfg.cooldown = d.cooldown_seconds || 60; this.rotationAccounts = d.accounts || {} } catch (e) { } },
+    async loadApiKeys() { try { const r = await this.apiFetch('/api-keys'); const d = await r.json(); this.apiKeys = d.keys || [] } catch (e) { } },
+    async generateApiKey() {
+      try {
+        const r = await this.apiFetch('/api-keys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Key ' + new Date().toLocaleString() }) });
+        const d = await r.json(); this.newKey = d.key || null;
+        if (d.key) { this.auth.token = d.key; this.saveToCache(); }
+        this.loadApiKeys();
+        this.showToast(d.key ? '已生成并设为当前 Token' : '生成失败');
+      } catch (e) { this.showToast('生成失败: ' + (e.message || e)) }
+    },
+    async deleteApiKey(key) {
+      try {
+        await this.apiFetch('/api-keys/' + encodeURIComponent(key), { method: 'DELETE' });
+        this.loadApiKeys();
+        if (key === this.auth.token) { this.auth.token = ''; localStorage.removeItem('asp_api_token'); }
+        this.showToast('已删除');
+      } catch (e) { this.showToast('删除失败: ' + (e.message || e)) }
+    },
+    async copyKey(t) { try { await navigator.clipboard.writeText(t); this.showToast('已复制到剪贴板') } catch (e) { this.showToast('复制失败，请手动选择复制') } },
 
     get accountRows() { return this.accounts.map(a => ({ ...a, ...(this.rotationAccounts[a.id] || {}) })) },
+    get authExpiredCount() { return this.accounts.filter(a => a.auth_valid === false).length },
     get totalReqs() { return Object.values(this.stats).reduce((s, v) => s + (v.requests || 0), 0) },
     get totalRL() { return Object.values(this.stats).reduce((s, v) => s + (v.rate_limited || 0), 0) },
 
     async saveRotation() { try { await this.apiFetch('/rotation/mode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: this.rotCfg.mode, cooldown_seconds: this.rotCfg.cooldown }) }); this.showToast('已保存'); this.loadRotation() } catch (e) { this.showToast('保存失败') } },
     async forceNext() { try { await this.apiFetch('/rotation/next', { method: 'POST' }); this.showToast('已切换账号'); this.loadAccounts() } catch (e) { this.showToast('切换失败') } },
     async activateAccount(id) { try { await this.apiFetch(`/accounts/${id}/activate`, { method: 'POST' }); this.showToast('已激活'); this.loadAccounts(); this.loadRotation() } catch (e) { this.showToast('激活失败') } },
+    async deleteAccount(a) {
+      if (!confirm('确定删除账号 ' + (a.email || a.name || a.id) + ' 吗？\n将同时删除其 cookies 和登录数据，不可恢复。')) return;
+      try {
+        await this.apiFetch('/accounts/' + a.id, { method: 'DELETE' });
+        this.showToast('账号已删除');
+        this.loadAccounts(); this.loadRotation();
+      } catch (e) { this.showToast('删除失败: ' + (e.message || e)) }
+    },
     async addAccount() {
       if (this.loginInProgress) return;
       this.loginInProgress = true;
@@ -273,12 +318,12 @@ function app() {
       this.msgs.push({ role: 'user', content: t, images: imgs }); this.draft = ''; this.selectedImages = []; this.busy = true; this.resizeTa(); this.scrollDown(); this.saveToCache();
 
       // 生图模型走 /v1/images/edits (支持原始图片编辑)
-      if (this.model.includes('image')) {
+      if (this.model.includes('image') || this.model.includes('nano-banana')) {
         try {
           const formData = new FormData();
           formData.append('model', this.model);
           formData.append('prompt', t);
-          formData.append('size', '1024x1024');
+          formData.append('size', (this.imgSizes[this.imgRatio] && this.imgSizes[this.imgRatio][this.imgRes]) || '1024x1024');
           // 如果有选中的图片，转换为 File 对象传给 edit 接口（支持多张）
           for (let i = 0; i < imgs.length; i++) {
             const response = await fetch(imgs[i]);

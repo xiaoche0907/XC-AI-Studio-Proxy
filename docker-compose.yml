@@ -8,6 +8,7 @@ services:
       # - "9222:9222"  # Optional: expose only when debugging Camoufox
     volumes:
       - ./data:/app/data           # Account data persistence
+      - ./data/cloakbrowser:/root/.cloakbrowser  # Browser binary persistence (avoid re-download on rebuild)
       - ./.env:/app/.env:ro        # Environment config (read-only)
     environment:
       - AISTUDIO_PORT=8080
@@ -15,7 +16,7 @@ services:
       - AISTUDIO_CAMOUFOX_HEADLESS=1
       - AISTUDIO_ACCOUNTS_DIR=/app/data/accounts
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/v1/models"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       start_period: 10s

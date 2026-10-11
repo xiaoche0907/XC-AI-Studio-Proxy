@@ -28,6 +28,7 @@ class AccountResponse(BaseModel):
     email: str | None
     created_at: str
     last_used: str | None
+    auth_valid: bool | None = None
 
 
 class LoginStatusResponse(BaseModel):
@@ -89,7 +90,23 @@ async def list_accounts(
     account_service=Depends(get_account_service),
 ):
     """列出所有账号。"""
+    import asyncio
+
+    from aistudio_api.infrastructure.account.auth_probe import is_valid, probe_account
+
     accounts = account_service.list_accounts()
+
+    # 对缓存未命中的账号并发探测 cookies 有效性（不阻塞 event loop）
+    async def ensure_valid(a):
+        auth_path = account_service.auth_path(a.id)
+        auth_file = str(auth_path) if auth_path else None
+        valid = is_valid(a.id, auth_file)
+        if valid is None:
+            valid = await asyncio.to_thread(probe_account, a.id, auth_file)
+        return a, valid
+
+    results = await asyncio.gather(*(ensure_valid(a) for a in accounts))
+
     return [
         AccountResponse(
             id=a.id,
@@ -97,8 +114,9 @@ async def list_accounts(
             email=a.email,
             created_at=a.created_at,
             last_used=a.last_used,
+            auth_valid=valid,
         )
-        for a in accounts
+        for a, valid in results
     ]
 
 
@@ -224,6 +242,19 @@ async def import_cookies(
             log.info("[import-cookies] injected %d cookies, saved auth.json", count)
     except Exception as e:
         log.warning("[import-cookies] browser injection failed: %s", e)
+
+    # 3. 关键：删除该账号的 Chromium profile 并关闭当前 context，
+    #    强制下次请求从最新的 auth.json 重新播种（否则重启后会用 profile 里的旧 cookies）
+    try:
+        import asyncio
+
+        await asyncio.to_thread(account_service._store.remove_profile, account.id)
+        browser_session = runtime_state.client._session if runtime_state.client else None
+        if browser_session:
+            await browser_session.rebuild_context()
+        log.info("[import-cookies] profile cleared for %s, will re-seed on next request", account.id)
+    except Exception as e:
+        log.warning("[import-cookies] profile clear failed: %s", e)
 
     return ImportCookiesResponse(
         account_id=account.id,

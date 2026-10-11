@@ -71,6 +71,7 @@ tr:last-child td{border-bottom:none}
 .badge-green{background:var(--green-bg);color:#065f46}
 .badge-red{background:#fef2f2;color:#991b1b}
 .badge-gray{background:#f3f4f6;color:#374151}
+.auth-warn{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px}
 .btn{padding:8px 16px;border-radius:8px;border:1px solid var(--border);background:#fff;cursor:pointer;font-size:14px;font-weight:500;transition:.15s;font-family:inherit;display:inline-flex;align-items:center;gap:6px}
 .btn:hover{background:var(--hover)}
 .btn-primary{background:var(--green);color:#fff;border-color:var(--green)}
@@ -166,6 +167,10 @@ select.sel:focus,.sel:focus{border-color:var(--green);box-shadow:0 0 0 2px rgba(
 #input-box{width:100%;border:1px solid var(--border);border-radius:12px;box-shadow:0 0 8px rgba(0,0,0,.04);display:flex;align-items:flex-end;padding:8px;gap:6px;background:#fff}
 #input-box:focus-within{border-color:#a3a3a3}
 #input-box textarea{flex:1;border:none;outline:none;resize:none;font-family:inherit;font-size:15px;padding:6px 8px;max-height:200px;min-height:24px;line-height:1.5;background:transparent}
+.ratio-btn{position:relative;height:32px;flex-shrink:0;min-width:58px;padding:0 8px}
+.ratio-btn .cselect-menu{opacity:1;transform:none;pointer-events:auto;top:auto;bottom:calc(100% + 6px)}
+.res-btn{min-width:44px}
+.img-opts{display:flex;align-items:center;gap:6px;flex-shrink:0}
 #input-box .send{width:32px;height:32px;border-radius:8px;background:var(--green);color:#fff;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 #input-box .send:disabled{background:var(--border);cursor:default}
 #input-box .send svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2.5}

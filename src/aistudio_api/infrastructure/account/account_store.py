@@ -174,6 +174,29 @@ class AccountStore:
             return None
         return self._accounts_dir / account.id / "auth.json"
 
+    def auth_path(self, account_id: str) -> Path | None:
+        """获取指定账号的 auth.json 路径（目录不存在时返回 None）。"""
+        account_dir = self._accounts_dir / account_id
+        if not account_dir.exists():
+            return None
+        return account_dir / "auth.json"
+
+    def remove_profile(self, account_id: str) -> None:
+        """删除账号的 Chromium profile 目录（导入新 cookies 后调用，
+        强制下次浏览器启动时从最新的 auth.json 重新播种）。"""
+        import shutil
+
+        profile_dir = self._accounts_dir / account_id / "profile"
+        if profile_dir.exists():
+            shutil.rmtree(profile_dir, ignore_errors=True)
+        # 兼容旧的 profile.bak 残留
+        for bak in self._accounts_dir.glob(f"{account_id}/profile.bak.*"):
+            try:
+                if bak.is_dir():
+                    shutil.rmtree(bak, ignore_errors=True)
+            except Exception:
+                pass
+
     def set_active_account(self, account_id: str) -> AccountMeta | None:
         """设置活跃账号，返回账号元数据或 None（如果不存在）。"""
         registry = self._load_registry()

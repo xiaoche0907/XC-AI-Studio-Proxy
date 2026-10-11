@@ -260,6 +260,21 @@ class BrowserSession:
         await self._run_sync(self._close_sync)
         self._executor.shutdown(wait=True, cancel_futures=False)
 
+    async def rebuild_context(self) -> None:
+        """关闭当前 browser context，下次请求时按最新 auth.json 重建。
+        用于导入新 cookies 后强制重新播种。"""
+
+        def _sync():
+            if self._ctx is not None:
+                try:
+                    self._ctx.close()
+                except Exception:
+                    pass
+            self._ctx = None
+            self._hook_page = None
+
+        await self._run_sync(_sync)
+
     async def send_hooked_request(self, *, body: str, timeout_ms: int) -> tuple[int, bytes]:
         return await self._run_sync(self._send_hooked_request_sync, body, timeout_ms)
 
@@ -584,10 +599,25 @@ class BrowserSession:
             # causing Google to flag the profile's cookie state as inconsistent.
             should_seed_from_auth = not (profile_path.exists() and any(profile_path.iterdir()))
             profile_path.mkdir(parents=True, exist_ok=True)
-            self._ctx = sync_launch_persistent_context(
-                profile_dir,
-                **build_browser_context_options(),
-            )
+            try:
+                self._ctx = sync_launch_persistent_context(
+                    profile_dir,
+                    **build_browser_context_options(),
+                )
+            except Exception as first_exc:
+                # 残留 Chromium 进程占着 profile 锁时 launch 会失败（Target closed /
+                # profile in use）。杀掉残留进程、清掉 Singleton 锁文件后重试一次。
+                log.warning(
+                    "Chromium launch failed (profile lock / stale process), cleaning up and retrying: %s",
+                    first_exc,
+                )
+                self._ctx = None
+                self._cleanup_stale_chromium_sync(profile_path)
+                time.sleep(2)
+                self._ctx = sync_launch_persistent_context(
+                    profile_dir,
+                    **build_browser_context_options(),
+                )
             self._browser = None
             self._cf = None
             self._playwright = None
@@ -599,17 +629,20 @@ class BrowserSession:
         sync_maximize_page_window(self._hook_page)
 
         # First, see whether the persistent profile / current context is already alive.
-        try:
-            self._hook_page.goto("https://aistudio.google.com/", wait_until="domcontentloaded", timeout=15000)
-            if "accounts.google.com" not in (self._hook_page.url or ""):
-                profile_label = "profile" if profile_dir else "auth.json cache"
-                log.info("[chromium-auth] %s hit", profile_label)
-                self._goto_aistudio_sync(self._hook_page)
-                self._install_hooks_sync(self._hook_page)
-                log.debug(f"[timing] page loaded (cached) in {_t.time()-_t0:.1f}s")
-                return self._ctx
-        except Exception as e:
-            log.debug("[chromium-auth] initial profile check failed: %s", e)
+        # 注意：全新 profile（should_seed_from_auth=True）必须走 auth.json 播种，
+        # 不能先试探 goto —— 页面重定向不及时会把空 profile 误判为已登录（profile hit）。
+        if not should_seed_from_auth:
+            try:
+                self._hook_page.goto("https://aistudio.google.com/", wait_until="domcontentloaded", timeout=15000)
+                if "accounts.google.com" not in (self._hook_page.url or ""):
+                    profile_label = "profile" if profile_dir else "auth.json cache"
+                    log.info("[chromium-auth] %s hit", profile_label)
+                    self._goto_aistudio_sync(self._hook_page)
+                    self._install_hooks_sync(self._hook_page)
+                    log.debug(f"[timing] page loaded (cached) in {_t.time()-_t0:.1f}s")
+                    return self._ctx
+            except Exception as e:
+                log.debug("[chromium-auth] initial profile check failed: %s", e)
 
         # Only seed a fresh profile from auth.json once. After a profile exists,
         # auth.json must not be re-injected or it can corrupt the browser state.
@@ -1263,6 +1296,29 @@ mw:((hash) => {
             textarea.fill(value)
         except Exception:
             pass
+
+    def _cleanup_stale_chromium_sync(self, profile_path: Path | None) -> None:
+        """杀掉残留 Chromium 进程并清除 profile 的 Singleton 锁文件。
+
+        仅用于 launch 失败（profile 被残留进程占用）后的恢复，避免后续请求持续 500。
+        """
+        import subprocess
+
+        for pattern in ("chrome", "chromium"):
+            try:
+                subprocess.run(
+                    ["pkill", "-9", "-f", pattern],
+                    capture_output=True,
+                    timeout=10,
+                )
+            except Exception:
+                pass
+        if profile_path is not None:
+            try:
+                for lock_file in profile_path.glob("Singleton*"):
+                    lock_file.unlink(missing_ok=True)
+            except Exception:
+                pass
 
     def _close_sync(self) -> None:
         if self._ctx is not None:

@@ -6,6 +6,7 @@ model_defaults:
       match:
         contains:
           - image
+          - nano-banana
       # 命中后视为生图模型
       is_image_model: true
       # 生图模型可选内置工具名：

@@ -22,12 +22,15 @@ MODELS = [
     # Gemma 4 系列
     {"id": "gemma-4-31b-it", "object": "model", "created": 1700000000, "owned_by": "google"},
     {"id": "gemma-4-26b-a4b-it", "object": "model", "created": 1700000000, "owned_by": "google"},
-    # Gemini 3 系列
-    {"id": "gemini-3-flash-preview", "object": "model", "created": 1700000000, "owned_by": "google"},
+    # Gemini 3 系列（实测 AI Studio 可用）
+    {"id": "gemini-3.8-flash", "object": "model", "created": 1700000000, "owned_by": "google"},
     {"id": "gemini-3.5-flash", "object": "model", "created": 1700000000, "owned_by": "google"},
+    {"id": "gemini-3.5-flash-lite", "object": "model", "created": 1700000000, "owned_by": "google"},
+    {"id": "gemini-3-flash-preview", "object": "model", "created": 1700000000, "owned_by": "google"},
     {"id": "gemini-3.1-pro-preview", "object": "model", "created": 1700000000, "owned_by": "google"},
     {"id": "gemini-3.1-flash-lite", "object": "model", "created": 1700000000, "owned_by": "google"},
     {"id": "gemini-3.1-flash-image-preview", "object": "model", "created": 1700000000, "owned_by": "google"},
+    {"id": "gemini-nano-banana-2.1", "object": "model", "created": 1700000000, "owned_by": "google"},
     {"id": "gemini-3-pro-image-preview", "object": "model", "created": 1700000000, "owned_by": "google"},
     {"id": "gemini-3.1-flash-live-preview", "object": "model", "created": 1700000000, "owned_by": "google"},
     {"id": "gemini-3.1-flash-tts-preview", "object": "model", "created": 1700000000, "owned_by": "google"},

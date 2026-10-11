@@ -32,6 +32,10 @@
           <path d="M23 21v-2a4 4 0 00-3-3.87" />
           <path d="M16 3.13a4 4 0 010 7.75" />
         </svg> 账号管理 </button>
+      <button class="nav-item" :class="{active:view==='apikeys'}" @click="go('apikeys')">
+        <svg viewBox="0 0 24 24">
+          <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
+        </svg> API Keys </button>
     </div>
     <div class="sidebar-footer">
       <div class="dot"></div><span>系统在线</span>
@@ -62,7 +66,8 @@
           </div>
         </template>
         <template x-if="view!=='chat'">
-          <span class="topbar-title" x-text="view==='dashboard'?'控制面板':'账号管理'"></span>
+          <span class="topbar-title"
+            x-text="view==='dashboard'?'控制面板':view==='apikeys'?'API Keys':'账号管理'"></span>
         </template>
       </div>
       <div class="topbar-right" @click.stop>
@@ -242,6 +247,28 @@
           <div id="input-box">
             <input type="file" x-ref="fileInput" @change="handleImageUpload" accept="image/*" multiple
               style="display:none">
+            <template x-if="model && (model.includes('image') || model.includes('nano-banana'))">
+              <div class="img-opts">
+                <div class="cselect-btn ratio-btn" @click="toggleSelect('ratio',$event)" tabindex="0" title="输出比例">
+                  <span x-text="imgRatio"></span><span class="arrow"></span>
+                  <div class="cselect-menu" x-show="openSelect==='ratio'" @click.stop>
+                    <template x-for="r in ['1:1','4:3','3:4','16:9','9:16','3:2','2:3','4:5','5:4','21:9','1:4','1:8','4:1','8:1']" :key="r">
+                      <div class="cselect-opt" :class="{active:imgRatio===r}" @click="imgRatio=r;openSelect=null"
+                        x-text="r"></div>
+                    </template>
+                  </div>
+                </div>
+                <div class="cselect-btn ratio-btn res-btn" @click="toggleSelect('res',$event)" tabindex="0" title="分辨率">
+                  <span x-text="imgRes"></span><span class="arrow"></span>
+                  <div class="cselect-menu" x-show="openSelect==='res'" @click.stop>
+                    <template x-for="r in ['1K','2K','4K']" :key="r">
+                      <div class="cselect-opt" :class="{active:imgRes===r}" @click="imgRes=r;openSelect=null"
+                        x-text="r"></div>
+                    </template>
+                  </div>
+                </div>
+              </div>
+            </template>
             <button class="upload-btn" @click="$refs.fileInput.click()" title="上传图片">
               <svg viewBox="0 0 24 24">
                 <path
@@ -361,6 +388,10 @@
           <div class="card">
             <div class="card-head"><span>账号池</span><span style="font-size:13px;color:var(--muted)"
                 x-text="accountRows.length+' 个账号'"></span></div>
+            <div x-show="authExpiredCount>0" style="padding:12px 20px 0">
+              <div class="auth-warn"
+                x-text="authExpiredCount+' 个账号的 Google cookies 已失效，请求会被重定向到登录页。请重新导出导入 cookies。'"></div>
+            </div>
             <div class="table-wrap">
               <table>
                 <thead>
@@ -370,6 +401,7 @@
                     <th>成功</th>
                     <th>429</th>
                     <th>状态</th>
+                    <th>Cookies</th>
                     <th>操作</th>
                   </tr>
                 </thead>
@@ -386,18 +418,101 @@
                           x-text="a.rate_limited||0"></span></td>
                       <td><span class="badge badge-green" x-show="a.id===activeId">激活</span><span
                           class="badge badge-gray" x-show="a.id!==activeId">待命</span></td>
-                      <td><button class="btn btn-sm" x-show="a.id!==activeId"
-                          @click="activateAccount(a.id)">手动激活</button></td>
+                      <td>
+                        <span class="badge badge-green" x-show="a.auth_valid===true">有效</span>
+                        <span class="badge badge-red" x-show="a.auth_valid===false">已过期</span>
+                        <span class="badge badge-gray" x-show="a.auth_valid===undefined||a.auth_valid===null">检测中</span>
+                      </td>
+                      <td style="white-space:nowrap">
+                        <button class="btn btn-sm" x-show="a.id!==activeId"
+                          @click="activateAccount(a.id)">手动激活</button>
+                        <button class="btn btn-sm" style="color:#d93025" @click="deleteAccount(a)">删除</button>
+                      </td>
                     </tr>
                   </template>
                   <tr x-show="!accountRows.length">
-                    <td colspan="6" style="text-align:center;color:var(--muted);padding:24px">暂无账号</td>
+                    <td colspan="7" style="text-align:center;color:var(--muted);padding:24px">暂无账号</td>
                   </tr>
                 </tbody>
               </table>
             </div>
           </div>
         </div>
+      </div>
+    </div>
+    <div class="page-wrap" :class="{active:view==='apikeys'}">
+      <div class="scroll-area">
+        <div class="page-pad">
+          <div
+            style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:24px">
+            <h1 style="font-size:24px;font-weight:700">API Keys</h1>
+            <button class="btn btn-primary" @click="generateApiKey()">+ 生成 Key</button>
+          </div>
+          <div class="card">
+            <div class="card-head"><span>API Keys</span><span style="font-size:13px;color:var(--muted)"
+                x-text="apiKeys.length+' 个 Key'"></span></div>
+            <div style="padding:20px">
+              <div style="font-size:13px;color:var(--muted);margin-bottom:12px">生成的 Key 用于调用
+                <code style="background:var(--hover);padding:2px 6px;border-radius:4px">http://localhost:8080/v1</code>
+                鉴权（<code style="background:var(--hover);padding:2px 6px;border-radius:4px">Authorization: Bearer
+                  &lt;key&gt;</code>）。生成第一个 Key 后鉴权立即启用。</div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>API Key</th>
+                      <th>名称</th>
+                      <th>创建时间</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template x-for="k in apiKeys" :key="k.key">
+                      <tr>
+                        <td style="font-family:monospace;font-size:13px"
+                          x-text="k.key.length>24?k.key.slice(0,12)+'...'+k.key.slice(-8):k.key"></td>
+                        <td x-text="k.name"></td>
+                        <td style="font-size:13px;color:var(--muted)" x-text="k.created_at"></td>
+                        <td style="white-space:nowrap">
+                          <button class="btn btn-sm" @click="copyKey(k.key)">复制</button>
+                          <button class="btn btn-sm" style="color:#d93025" @click="deleteApiKey(k.key)">删除</button>
+                        </td>
+                      </tr>
+                    </template>
+                    <tr x-show="!apiKeys.length">
+                      <td colspan="4" style="text-align:center;color:var(--muted);padding:24px">尚未生成 Key</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- API Key 生成成功 Modal -->
+  <div class="modal-overlay" x-show="newKey" x-cloak @click.self="newKey=null" x-transition.opacity>
+    <div class="modal" x-show="newKey" x-transition>
+      <div class="modal-head">
+        <span>API Key 已生成</span>
+        <button class="modal-close" @click="newKey=null">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-field">
+          <label>请立即复制保存，关闭后不再显示完整 Key</label>
+          <textarea class="modal-textarea" x-text="newKey" rows="3" readonly
+            style="font-family:monospace;font-size:14px"></textarea>
+        </div>
+        <div style="display:flex;gap:12px;align-items:center">
+          <button class="btn btn-primary" @click="copyKey(newKey)">复制 Key</button>
+          <span style="font-size:13px;color:var(--muted)">用法：
+            <code style="background:var(--hover);padding:2px 6px;border-radius:4px">Authorization: Bearer <span
+                x-text="newKey"></span></code></span>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" @click="newKey=null">关闭</button>
       </div>
     </div>
   </div>
